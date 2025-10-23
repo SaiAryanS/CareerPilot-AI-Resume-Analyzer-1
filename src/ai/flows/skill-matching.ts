@@ -12,7 +12,7 @@ import { z } from 'genkit';
 
 // Simple ATS-style skill extractor: matches common skills/technologies from text.
 const COMMON_SKILLS = [
-  'javascript','typescript','react','next.js','node.js','express','django','python','java','c++','c','mongodb','mysql','postgresql','sql','docker','kubernetes','aws','azure','gcp','git','jenkins','ci/cd','rest','graphql','html','css','tailwind','material ui','openCV','tensorflow','pytorch'
+  'javascript','typescript','react','vue','angular','next.js','node.js','express','django','flask','python','java','c++','c','mongodb','mysql','postgresql','sql','docker','kubernetes','aws','azure','gcp','git','jenkins','ci/cd','rest','graphql','html','css','tailwind','material ui','opencv','tensorflow','pytorch'
 ];
 
 function extractSkillsFromText(text: string) {
@@ -23,6 +23,59 @@ function extractSkillsFromText(text: string) {
   }
   return Array.from(found);
 }
+
+// Compute a deterministic server score for transparency and strict matching.
+export async function computeServerScoreFor(inputObj: any) {
+  const categorizeSkill = (s: string) => {
+    const sLower = s.toLowerCase();
+    if (/react|vue|angular|next/.test(sLower)) return 'frontend';
+    if (/node|express|django|flask|rails/.test(sLower)) return 'backend';
+    if (/sql|postgres|mysql|mongodb|hadoop|spark|etl|data|pytorch|tensorflow|scikit/.test(sLower)) return 'data';
+    if (/docker|kubernetes|ci\/cd|jenkins|aws|azure|gcp|s3|cloud/.test(sLower)) return 'infra';
+    return 'other';
+  };
+
+  const obj = Object.assign({}, inputObj);
+  let matching = Array.isArray(obj.matchingSkills) ? obj.matchingSkills.length : 0;
+  if ((!matching || matching === 0) && obj._input) {
+    const resumeSkills = extractSkillsFromText(String(obj._input.resume || ''));
+    const jdSkills = extractSkillsFromText(String(obj._input.jobDescription || ''));
+    const inter = jdSkills.filter((s: string) => resumeSkills.includes(s));
+    matching = inter.length;
+    obj.matchingSkills = inter;
+  }
+
+  const categories: Record<string, number> = { frontend: 0, backend: 0, data: 0, infra: 0, other: 0 };
+  if (Array.isArray(obj.matchingSkills)) {
+    for (const s of obj.matchingSkills) {
+      const cat = categorizeSkill(String(s));
+      categories[cat] = (categories[cat] || 0) + 1;
+    }
+  }
+
+  const perSkillWeight = 12;
+  let score = Math.min(100, Math.round(matching * perSkillWeight));
+  if (obj.impliedSkills && String(obj.impliedSkills).trim().length > 30 && matching >= 2) score += 2;
+  const missing = Array.isArray(obj.missingSkills) ? obj.missingSkills.length : 0;
+  score = Math.max(0, score - Math.min(20, missing * 2));
+
+  const jdText = String(obj._input?.jobDescription || '').toLowerCase();
+  const jdWantsFrontend = /frontend|react|vue|angular|next/.test(jdText);
+  const jdWantsBackend = /backend|node|express|django|flask|api|rest/.test(jdText);
+  if (jdWantsFrontend && jdWantsBackend) {
+    const hasFrontend = categories.frontend > 0;
+    const hasBackend = categories.backend > 0;
+    if (!hasFrontend || !hasBackend) {
+      score = Math.min(score, 45);
+    }
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  return {
+    score,
+    reason: `Computed from ${matching} direct matches (perSkill=${perSkillWeight}), missing=${missing}, categories=${JSON.stringify(categories)}`,
+  };
+};
 
 const AnalyzeSkillsInputSchema = z.object({
   jobDescription: z.string().describe('The job description for the role.'),
@@ -107,23 +160,35 @@ Follow these steps:
 
 Return output strictly in the defined schema.
 
+Below are two short examples (few-shot) showing the exact final JSON-only output expected. Use these as style guides when producing the final JSON. After the examples, analyze the provided JD + Resume and produce the JSON block only.
+
+EXAMPLE 1 (Full Stack mismatch):
+Job Description: Full Stack role (React, Node.js, REST APIs, Postgres)
+Resume: Data Scientist (Python, Flask, SQL, Docker) - mentions REST APIs via Flask and Dockerized model-serving but no React or Node backend experience.
+Expected final JSON (only):
+<JSON_START>
+{"matchScore":40,"scoreRationale":"Resume shows backend/data engineering strengths (Flask, Docker, SQL) and small API experience but lacks required frontend (React) and Node/Express experience. Penalized heavily for missing core frontend/backend coverage.","matchingSkills":["REST APIs","Docker","PostgreSQL"],"missingSkills":["React","Node.js/Express","Frontend testing"],"impliedSkills":"Demonstrated backend/API development and deployment experience; implies ability to work with web backend frameworks.","status":"Needs Improvement"}
+<JSON_END>
+
+EXAMPLE 2 (Good Full Stack match):
+Job Description: Full Stack role (React, Next.js, Node.js, REST APIs)
+Resume: Experienced Full Stack Dev (React, Next.js, Node.js, Express, PostgreSQL, Docker)
+Expected final JSON (only):
+<JSON_START>
+{"matchScore":92,"scoreRationale":"Strong direct matches for frontend (React/Next.js) and backend (Node.js/Express) plus DB and deployment experience. Minor missing preferred skills.","matchingSkills":["React","Next.js","Node.js","Express","PostgreSQL","Docker"],"missingSkills":["CI/CD pipeline (Jenkins)"],"impliedSkills":"Shows end-to-end application development; likely able to own full stack features.","status":"Approved"}
+<JSON_END>
+
 Job Description:
 {{{jobDescription}}}
 
 Resume:
 {{{resume}}}
 
-IMPORTANT: After the analysis above, on a new line OUTPUT ONLY a single JSON
-object and nothing else. The JSON must contain these keys: matchScore (number),
+IMPORTANT: After the analysis above, on a new line OUTPUT ONLY a single JSON object
+and nothing else. The JSON must contain these keys: matchScore (number),
 scoreRationale (string), matchingSkills (array of strings), missingSkills (array
-of strings), impliedSkills (string), status (string). Example:
-{"matchScore":85,"scoreRationale":"...","matchingSkills":["Node.js"],"missingSkills":[],"impliedSkills":"...","status":"Approved"}
-Do NOT output a JSON Schema, explanation, or any other text after the JSON.
-If possible, to make parsing robust, print the JSON between the literal
-markers <JSON_START> and <JSON_END> on their own lines. Example:
-<JSON_START>
-{"matchScore":85,"scoreRationale":"...","matchingSkills":["Node.js"],"missingSkills":[],"impliedSkills":"...","status":"Approved"}
-<JSON_END>
+of strings), impliedSkills (string), status (string). Print the JSON between the literal
+markers <JSON_START> and <JSON_END> on their own lines. Do NOT output any other text.
 `,
 });
 
@@ -172,6 +237,8 @@ const analyzeSkillsFlow = ai.defineFlow(
       }
       return res;
     };
+
+    // (removed accidental inner export)
 
   const normalized = unwrapSchema(maybeOutput);
   console.debug('[analyzeSkills] - normalized output:', JSON.stringify(normalized, null, 2));
@@ -398,6 +465,15 @@ const analyzeSkillsFlow = ai.defineFlow(
     // from inflating scores based on loose mapping or high project multipliers.
     const STRICT = process.env.STRICT_MATCHING === 'true';
 
+    const categorizeSkill = (s: string) => {
+      const sLower = s.toLowerCase();
+      if (/react|vue|angular|next/.test(sLower)) return 'frontend';
+      if (/node|express|django|flask|rails/.test(sLower)) return 'backend';
+      if (/sql|postgres|mysql|mongodb|hadoop|spark|spark|etl|data|pytorch|tensorflow|scikit|spark/.test(sLower)) return 'data';
+      if (/docker|kubernetes|ci\/cd|jenkins|aws|azure|gcp|s3|cloud/.test(sLower)) return 'infra';
+      return 'other';
+    };
+
     const computeServerScore = (obj: any) => {
       // If the model didn't provide matchingSkills, try extracting skills from
       // the resume and job description (simple ATS-like extraction) and use
@@ -411,24 +487,58 @@ const analyzeSkillsFlow = ai.defineFlow(
         // also populate matchingSkills list for transparency
         obj.matchingSkills = inter;
       }
-      // Base rule: 5 matching skills -> 100 (each skill = 20 pts)
-      let score = Math.min(5, matching) * 20;
-      // Small bonus if impliedSkills contains non-empty narrative
-      if (obj.impliedSkills && String(obj.impliedSkills).trim().length > 20) score += 5;
-      // If there are many missing skills, apply a penalty (1 point per missing up to 10)
+      // Categorize matching skills to enforce coverage rules
+      const categories = { frontend: 0, backend: 0, data: 0, infra: 0, other: 0 } as Record<string, number>;
+      if (Array.isArray(obj.matchingSkills)) {
+        for (const s of obj.matchingSkills) {
+          const cat = categorizeSkill(String(s));
+          categories[cat] = (categories[cat] || 0) + 1;
+        }
+      }
+
+      // Lower per-skill weight to reduce single-skill inflation
+      const perSkillWeight = 12; // each direct match ~12 points
+      let score = Math.min(100, Math.round(matching * perSkillWeight));
+
+      // Small conditional bonus for implied skills: only apply when >=2 direct matches
+      if (obj.impliedSkills && String(obj.impliedSkills).trim().length > 30 && matching >= 2) score += 2;
+
+      // Apply missing skills penalty: stronger penalty for many core misses
       const missing = Array.isArray(obj.missingSkills) ? obj.missingSkills.length : 0;
-      score = Math.max(0, score - Math.min(10, missing));
-      return Math.min(100, Math.round(score));
+      score = Math.max(0, score - Math.min(20, missing * 2));
+
+      // Enforce Full-Stack coverage: if JD mentions both front and back but one side missing, apply a large penalty
+      const jdText = String(obj._input?.jobDescription || '').toLowerCase();
+      const jdWantsFrontend = /frontend|react|vue|angular|next/.test(jdText);
+      const jdWantsBackend = /backend|node|express|django|flask|api|rest/.test(jdText);
+      if (jdWantsFrontend && jdWantsBackend) {
+        // require at least one frontend and one backend direct match
+        const hasFrontend = categories.frontend > 0;
+        const hasBackend = categories.backend > 0;
+        if (!hasFrontend || !hasBackend) {
+          // Apply a strong cap: maximum 45 if missing one side
+          score = Math.min(score, 45);
+        }
+      }
+
+      // final clamp
+      score = Math.max(0, Math.min(100, Math.round(score)));
+
+      // return an object with rationale for API visibility
+      return {
+        score,
+        reason: `Computed from ${matching} direct matches (perSkill=${perSkillWeight}), missing=${missing}, categories=${JSON.stringify(categories)}`,
+      };
     };
 
     const modelScoreValid = typeof finalObj.matchScore === 'number' && finalObj.matchScore >= 0 && finalObj.matchScore <= 100;
     if (STRICT || !modelScoreValid) {
-      const serverScore = computeServerScore(finalObj);
-      finalObj.scoreRationale = `Server-side computed score: ${serverScore} based on ${finalObj.matchingSkills.length} matching skills, ${finalObj.missingSkills.length} missing skills.`;
-      finalObj.matchScore = serverScore;
+      const serverScoreObj = await computeServerScoreFor(finalObj);
+      finalObj.scoreRationale = `Server-side computed score: ${serverScoreObj.score} based on ${finalObj.matchingSkills.length} matching skills, ${finalObj.missingSkills.length} missing skills. (${serverScoreObj.reason})`;
+      finalObj.matchScore = serverScoreObj.score;
       // recompute status
-      if (serverScore >= 75) finalObj.status = 'Approved';
-      else if (serverScore >= 50) finalObj.status = 'Needs Improvement';
+      if (serverScoreObj.score >= 75) finalObj.status = 'Approved';
+      else if (serverScoreObj.score >= 50) finalObj.status = 'Needs Improvement';
       else finalObj.status = 'Not a Match';
     } else {
       // Use model score but ensure it's an integer and status consistent

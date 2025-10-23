@@ -1,0 +1,22 @@
+John Doe
+
+Summary:
+Data Scientist with 6 years experience building statistical models, data pipelines, and analytics platforms. Strong background in Python, SQL, Hadoop, Spark, and machine learning.
+
+Experience:
+- Data Scientist, Acme Analytics (2019-2024)
+  - Built ETL pipelines using Python, Apache Airflow, and PySpark to process terabytes of data.
+  - Designed and deployed machine learning models (classification and regression) using scikit-learn and TensorFlow.
+  - Created REST APIs (Flask) to serve model predictions to internal services.
+  - Worked with MySQL and PostgreSQL for analytical reporting.
+
+- Data Engineer, DataWorks (2016-2019)
+  - Implemented data ingestion and transformation using Hadoop HDFS, Hive, and Spark.
+  - Dockerized several pipeline components for consistent deployments.
+
+Skills:
+Python, SQL, Spark, Hadoop, PySpark, scikit-learn, TensorFlow, Flask, REST APIs, MySQL, PostgreSQL, Docker, AWS S3, Git
+
+Projects:
+- Real-time analytics pipeline delivering dashboards used by product and sales.
+- Model-serving microservice built with Flask and Docker.

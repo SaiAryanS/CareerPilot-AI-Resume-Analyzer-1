@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { analyzeSkills } from '@/ai/flows/skill-matching';
+import { analyzeSkills, computeServerScoreFor } from '@/ai/flows/skill-matching';
 
 export async function POST(req: NextRequest) {
   console.log('[/api/analyze-skills] - Received request');
@@ -17,9 +17,18 @@ export async function POST(req: NextRequest) {
       jobDescription,
       resume,
     });
+    // also compute server score separately for transparency
+    const serverScoreObj = await computeServerScoreFor({
+      _input: { jobDescription, resume },
+      matchingSkills: result.matchingSkills,
+      missingSkills: result.missingSkills,
+      impliedSkills: result.impliedSkills,
+    });
+    const modelScore = typeof result.matchScore === 'number' ? result.matchScore : null;
+    const serverScore = serverScoreObj?.score ?? null;
     console.log('[/api/analyze-skills] - analyzeSkills flow completed successfully.');
 
-    return NextResponse.json(result);
+  return NextResponse.json({ ...result, modelScore, serverScore, serverScoreReason: serverScoreObj?.reason });
   } catch (error) {
     console.error('[/api/analyze-skills] - Error caught in analyze-skills endpoint:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';

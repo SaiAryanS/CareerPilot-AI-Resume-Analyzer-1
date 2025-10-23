@@ -1,0 +1,10 @@
+Full Stack Developer - We seek a Full Stack Developer to design, develop, and maintain scalable web applications end-to-end. Core requirements:
+- Strong experience with modern frontend frameworks (React, Vue, or Angular)
+- Proficient in Node.js and Express or similar backend frameworks
+- Experience designing and consuming REST APIs and GraphQL
+- Familiarity with relational databases (PostgreSQL/MySQL) and basic data modeling
+- Comfortable with Docker and CI/CD pipelines
+Preferred:
+- Experience with Next.js or server-side rendering
+- Familiarity with cloud platforms (AWS/GCP/Azure)
+- Frontend testing frameworks (Jest, React Testing Library)
