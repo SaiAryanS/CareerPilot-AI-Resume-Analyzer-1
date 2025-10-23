@@ -135,9 +135,21 @@ let memoryState: State = { toasts: [] }
 
 function dispatch(action: Action) {
   memoryState = reducer(memoryState, action)
-  listeners.forEach((listener) => {
-    listener(memoryState)
-  })
+  // Notify listeners asynchronously to avoid causing setState during another
+  // component's render phase (prevents React warning about updating a
+  // component while rendering another).
+  setTimeout(() => {
+    listeners.forEach((listener) => {
+      try {
+        listener(memoryState)
+      } catch (e) {
+        // swallow listener errors to avoid breaking toast system
+        // listeners are UI components and should not throw.
+        // eslint-disable-next-line no-console
+        console.error('Toast listener error', e)
+      }
+    })
+  }, 0)
 }
 
 type Toast = Omit<ToasterToast, "id">

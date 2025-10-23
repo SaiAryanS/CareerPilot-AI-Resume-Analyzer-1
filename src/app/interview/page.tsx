@@ -17,6 +17,18 @@ import { Loader2, Mic, StopCircle, Timer } from 'lucide-react';
 
 type InterviewResult = EvaluateAnswerOutput & { question: string; userAnswer: string; };
 
+// Minimal SpeechRecognition typings for browsers that support it
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: any;
+    SpeechRecognition?: any;
+  }
+  interface SpeechRecognitionEvent extends Event {
+    resultIndex: number;
+    results: any;
+  }
+}
+
 const INTERVIEW_TIME_LIMIT = 180; // 3 minutes in seconds
 
 export default function InterviewPage() {
@@ -29,7 +41,7 @@ export default function InterviewPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
+  const [recognition, setRecognition] = useState<any | null>(null);
   const [timeLeft, setTimeLeft] = useState(INTERVIEW_TIME_LIMIT);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -41,11 +53,8 @@ export default function InterviewPage() {
 
   const preventPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    toast({
-      variant: 'destructive',
-      title: 'Pasting Disabled',
-      description: 'Please type your answer to ensure a fair evaluation.',
-    });
+    // Defer toast to avoid setState-in-render warnings
+    setTimeout(() => toast({ variant: 'destructive', title: 'Pasting Disabled', description: 'Please type your answer to ensure a fair evaluation.' }), 0);
   };
 
   const handleSpeech = () => {
@@ -57,7 +66,7 @@ export default function InterviewPage() {
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      toast({ variant: 'destructive', title: 'Speech recognition not supported in this browser.' });
+      setTimeout(() => toast({ variant: 'destructive', title: 'Speech recognition not supported in this browser.' }), 0);
       return;
     }
 
@@ -68,13 +77,13 @@ export default function InterviewPage() {
 
     newRecognition.onstart = () => setIsRecording(true);
     newRecognition.onend = () => setIsRecording(false);
-    newRecognition.onerror = (event) => {
+    newRecognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
-      toast({ variant: 'destructive', title: 'Speech recognition error', description: event.error });
+      setTimeout(() => toast({ variant: 'destructive', title: 'Speech recognition error', description: event.error }), 0);
       setIsRecording(false);
     };
 
-    newRecognition.onresult = (event) => {
+    newRecognition.onresult = (event: SpeechRecognitionEvent) => {
       let finalTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; ++i) {
         if (event.results[i].isFinal) {
@@ -153,14 +162,14 @@ export default function InterviewPage() {
       try {
         const jobDescription = sessionStorage.getItem('interviewJobDescription');
         if (!jobDescription) {
-          toast({ variant: 'destructive', title: 'Error', description: 'No job description found. Redirecting...' });
+            setTimeout(() => toast({ variant: 'destructive', title: 'Error', description: 'No job description found. Redirecting...' }), 0);
           router.push('/');
           return;
         }
         const response = await generateInterviewQuestions(jobDescription);
         setQuestions(response.questions);
       } catch (error: any) {
-        toast({ variant: 'destructive', title: 'Failed to generate questions', description: error.message });
+          setTimeout(() => toast({ variant: 'destructive', title: 'Failed to generate questions', description: error.message }), 0);
         router.push('/');
       } finally {
         setIsLoading(false);
